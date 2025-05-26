@@ -97,14 +97,6 @@ Nimbus Navigator is a modern web application that provides current weather infor
     -   General network or API errors for weather data will also show an appropriate error message.
 -   **AI Suggestion Rate Limits:** If the rate limit for the Google Generative AI API is exceeded, a toast notification will inform the user to try again later.
 
-## Further Development
-
--   Implement more detailed hourly/daily forecasts.
--   Allow users to save favorite locations.
--   Add more sophisticated AI features (e.g., personalized suggestions based on user preferences).
--   Implement unit and integration tests.
--   Set up CI/CD for automated deployments.
-
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
