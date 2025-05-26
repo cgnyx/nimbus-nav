@@ -102,6 +102,3 @@ Nimbus Navigator is a modern web application that provides current weather infor
 Contributions are welcome! Please feel free to submit a Pull Request.
 
 ---
-
-This README provides a good overview of the Nimbus Navigator application.
-Let me know if you'd like any sections expanded or modified!
