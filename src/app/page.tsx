@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Header } from '@/components/Header';
 import { LocationSearchBar } from '@/components/LocationSearchBar';
 import { WeatherDisplayCard } from '@/components/WeatherDisplayCard';
-import { ActivitySuggestionCard } from '@/components/ActivitySuggestionCard';
+import type { ActivitySuggestionCard } from '@/components/ActivitySuggestionCard'; // Corrected import name if necessary
 import type { WeatherData } from '@/types';
 import { fetchWeatherByLocationName, fetchWeatherByCoords } from '@/lib/weather-api';
 import { suggestActivities, type SuggestActivitiesInput } from '@/ai/flows/suggest-activities';
@@ -33,21 +33,18 @@ export default function HomePage() {
       if (isGeoLocation && query.includes(',')) { 
         const [lat, lon] = query.split(',').map(Number);
         data = await fetchWeatherByCoords(lat, lon);
-        // setSearchQuery(data.location.split(',')[0]); 
       } else {
         data = await fetchWeatherByLocationName(query);
       }
       setWeatherData(data);
-      // Update search bar with the (potentially corrected or more detailed) location name from API response
-      // but only if it's not an error state "Generic" which we use for "not found" sometimes.
       if (data && data.location && data.condition !== "Generic") {
-        setSearchQuery(data.location.split(',')[0]); // Show primary part of location (e.g. city)
+        setSearchQuery(data.location.split(',')[0]); 
       }
 
 
       if (data && data.condition !== "Generic") { 
         fetchActivitySuggestions({ weatherCondition: data.condition, location: data.location });
-      } else if (data && data.condition === "Generic") { // Handle case where API might return a generic for other reasons
+      } else if (data && data.condition === "Generic") {
          toast({
           title: "Weather Information",
           description: `Displaying generic weather for "${query}". This might indicate an issue with specific data.`,
@@ -62,7 +59,7 @@ export default function HomePage() {
         description: errorMessage,
         variant: "destructive",
       });
-      setWeatherData(null); // Ensure weather data is cleared on error
+      setWeatherData(null); 
     } finally {
       setIsLoadingWeather(false);
     }
@@ -93,14 +90,24 @@ export default function HomePage() {
       setError(null); 
       setWeatherData(null); 
       setActivitySuggestions([]); 
-      setSearchQuery('Locating...'); // Give user feedback
+      setSearchQuery('Locating...'); 
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const { latitude, longitude } = position.coords;
           const query = `${latitude},${longitude}`;
           handleFetchWeather(query, true);
         },
-        (err)
+        (geoError: GeolocationPositionError) => {
+          setIsLoadingWeather(false);
+          const errorMessage = `Geolocation failed: ${geoError.message}`;
+          setError(errorMessage);
+          toast({
+            title: "Location Error",
+            description: errorMessage,
+            variant: "destructive",
+          });
+          setSearchQuery(''); 
+        }
       );
     } else {
       setError('Geolocation is not supported by your browser.');
@@ -109,7 +116,7 @@ export default function HomePage() {
         description: "Geolocation is not supported by your browser.",
         variant: "destructive",
       });
-      setSearchQuery(''); // Clear "Locating..."
+      setSearchQuery(''); 
     }
   };
   
@@ -130,7 +137,7 @@ export default function HomePage() {
         isLoading={isLoadingWeather}
       />
 
-      {error && !isLoadingWeather && !weatherData && ( // Show general error if no weather data and not loading
+      {error && !isLoadingWeather && !weatherData && ( 
         <div className="text-destructive text-center my-4 p-4 bg-destructive/10 rounded-md">{error}</div>
       )}
       
@@ -146,3 +153,4 @@ export default function HomePage() {
     </div>
   );
 }
+
