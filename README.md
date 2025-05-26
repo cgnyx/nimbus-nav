@@ -29,34 +29,6 @@ Nimbus Navigator is a modern web application that provides current weather infor
     - [Google Generative AI](https://ai.google.dev/) (For activity suggestions via Gemini models)
 - **APIs:**
     - [Open-Meteo API](https://open-meteo.com/) (For weather forecasting and geocoding)
-- **Development Tools:**
-    - [ESLint](https://eslint.org/) (Linting)
-    - [Prettier](https://prettier.io/) (Code formatting - implied, good practice)
-
-## Project Structure
-
-```
-/
-├── src/
-│   ├── app/                # Next.js App Router (pages, layout, globals.css)
-│   ├── ai/                 # Genkit AI flows and configuration
-│   │   ├── flows/          # Genkit flow definitions (e.g., suggest-activities.ts)
-│   │   ├── dev.ts          # Genkit development server entry point
-│   │   └── genkit.ts       # Genkit global AI instance configuration
-│   ├── components/         # React components
-│   │   ├── ui/             # ShadCN UI components
-│   │   └── weather-icons/  # Custom animated weather SVG icons
-│   ├── hooks/              # Custom React hooks (e.g., useDebounce, useToast)
-│   ├── lib/                # Utility functions and API clients (e.g., weather-api.ts)
-│   └── types/              # TypeScript type definitions
-├── public/                 # Static assets (though not explicitly used much in this setup)
-├── .env                    # Environment variables (GITIGNORED)
-├── next.config.ts          # Next.js configuration
-├── package.json            # Project dependencies and scripts
-├── tailwind.config.ts      # Tailwind CSS configuration
-├── tsconfig.json           # TypeScript configuration
-└── README.md               # This file
-```
 
 ## Getting Started
 
