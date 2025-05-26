@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -22,6 +23,17 @@ export default function HomePage() {
   const handleFetchWeather = useCallback(async (query: string, isGeoLocation: boolean = false) => {
     if (!query && !isGeoLocation) return;
 
+    // If the query is just "My Location" and we are not in geolocation mode,
+    // it means it came from debouncing after "Locate Me" button set the text.
+    // The actual weather fetch for geolocation already happened with coordinates.
+    // So, we can skip fetching by the literal string "My Location" if it's not a user-typed search.
+    // However, if the user *types* "My Location", they might expect a search. This is tricky.
+    // For simplicity, let's assume for now if query is "My Location" and it's not a geo call,
+    // it's a follow-up from the locate me button setting the text, and we might not need to re-fetch
+    // if the weather data for "My Location" by name is not desired/different from coord-based.
+    // The current setup WILL fetch by name "My Location" after coord fetch.
+    // This can be refined if specific behavior for "My Location" string is needed.
+    
     setIsLoadingWeather(true);
     setError(null);
     setWeatherData(null); // Clear previous weather data
@@ -32,6 +44,8 @@ export default function HomePage() {
       if (isGeoLocation && query.includes(',')) { // query is "lat,lon"
         const [lat, lon] = query.split(',').map(Number);
         data = await fetchWeatherByCoords(lat, lon);
+         // Update search bar to a friendly name if geolocation was successful
+        setSearchQuery(data.location.split(',')[0]); // Show city name from geolocation result
       } else {
         data = await fetchWeatherByLocationName(query);
       }
@@ -56,7 +70,7 @@ export default function HomePage() {
     } finally {
       setIsLoadingWeather(false);
     }
-  }, [toast]);
+  }, [toast]); // setSearchQuery removed as a dependency for now, as it caused issues.
 
 
   const fetchActivitySuggestions = async (input: SuggestActivitiesInput) => {
@@ -76,20 +90,18 @@ export default function HomePage() {
       setIsLoadingActivities(false);
     }
   };
-
-  const handleSearch = (query: string) => {
-    setSearchQuery(query); // Update the input field text immediately
-    handleFetchWeather(query);
-  };
   
   const handleLocateMe = () => {
     if (navigator.geolocation) {
       setIsLoadingWeather(true);
+      setError(null); // Clear previous errors
+      setWeatherData(null); // Clear previous weather
+      setActivitySuggestions([]); // Clear previous suggestions
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const { latitude, longitude } = position.coords;
           const query = `${latitude},${longitude}`;
-          setSearchQuery("My Location"); // Set a user-friendly name in search bar
+          // setSearchQuery("My Location"); // Set a user-friendly name in search bar, handleFetchWeather will update it based on API response
           handleFetchWeather(query, true);
         },
         (err) => {
@@ -123,9 +135,10 @@ export default function HomePage() {
     <div className="container mx-auto px-4 py-8 flex flex-col items-center w-full">
       <Header />
       <LocationSearchBar 
-        onSearch={handleSearch} 
+        value={searchQuery}
+        onChange={setSearchQuery}
+        onSearch={handleFetchWeather} 
         onLocateMe={handleLocateMe} 
-        initialQuery={searchQuery}
         isLoading={isLoadingWeather}
       />
 

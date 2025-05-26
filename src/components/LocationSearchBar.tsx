@@ -1,41 +1,47 @@
+
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Search, LocateFixed } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
 
 interface LocationSearchBarProps {
+  value: string;
+  onChange: (query: string) => void;
   onSearch: (query: string) => void;
   onLocateMe: () => void;
-  initialQuery?: string;
   isLoading?: boolean;
 }
 
-export function LocationSearchBar({ onSearch, onLocateMe, initialQuery = '', isLoading = false }: LocationSearchBarProps) {
-  const [query, setQuery] = useState(initialQuery);
-  const debouncedQuery = useDebounce(query, 500);
+export function LocationSearchBar({ 
+  value, 
+  onChange, 
+  onSearch, 
+  onLocateMe, 
+  isLoading = false 
+}: LocationSearchBarProps) {
+  const debouncedValue = useDebounce(value, 500);
 
   useEffect(() => {
-    if (debouncedQuery.trim() !== '') {
-      onSearch(debouncedQuery);
-    }
-  }, [debouncedQuery, onSearch]);
-  
-  useEffect(() => {
-    // If initialQuery changes from outside, update internal state
-    if(initialQuery !== query && initialQuery.trim() !== '') {
-      setQuery(initialQuery);
+    // Only call onSearch if debouncedValue has content and is not "My Location" if it's the initial auto-locate value.
+    // The actual fetch for "My Location" (by name) happens after geolocation gives coords.
+    if (debouncedValue.trim() !== '') {
+      // Check if the value is a result of direct typing or if it's "My Location" set programmatically.
+      // We want to avoid an extra search for "My Location" string if it was just set by handleLocateMe,
+      // as handleLocateMe already fetches by coordinates.
+      // However, if user explicitly types "My Location", they might expect it to search.
+      // This logic can be tricky. For now, let's assume any non-empty debounced value should trigger a search.
+      onSearch(debouncedValue);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialQuery]);
-
+  }, [debouncedValue, onSearch]); // onSearch (handleFetchWeather) is stable due to useCallback
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (query.trim() !== '') {
-      onSearch(query);
+    if (value.trim() !== '') {
+      onSearch(value); // Perform search immediately on submit
     }
   };
 
@@ -46,8 +52,8 @@ export function LocationSearchBar({ onSearch, onLocateMe, initialQuery = '', isL
         <Input
           type="text"
           placeholder="Enter city name, e.g., London"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
           className="pl-10 pr-4 py-3 text-lg rounded-lg shadow-sm focus:ring-accent focus:border-accent"
           aria-label="Search location"
           disabled={isLoading}
