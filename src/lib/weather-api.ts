@@ -64,8 +64,7 @@ async function getGeocodingData(locationName: string): Promise<any> {
 async function getGeocodingDataByCoords(lat: number, lon: number): Promise<any> {
   const response = await fetch(`${GEOCODING_API_BASE_URL}?latitude=${lat}&longitude=${lon}&count=1&language=en&format=json`);
    if (!response.ok) {
-    // Don't throw, as this is a secondary lookup. Allow weather fetch to proceed.
-    console.warn(`Failed to fetch geocoding data for coords ${lat},${lon}`);
+    console.warn(`Failed to fetch geocoding data for coords ${lat},${lon}. Status: ${response.status}`);
     return null;
   }
   const data = await response.json();
@@ -79,10 +78,9 @@ async function getGeocodingDataByCoords(lat: number, lon: number): Promise<any> 
 
 export async function fetchWeatherByLocationName(locationName: string): Promise<WeatherData> {
   const geoData = await getGeocodingData(locationName);
-  const { latitude, longitude, name, country_code, timezone, admin1 } = geoData;
+  const { latitude, longitude, name, country_code, timezone, admin1, utc_offset_seconds } = geoData;
   
-  // Use admin1 (state/region) if available and different from city name for more context
-  const displayName = (admin1 && admin1 !== name) ? `${name}, ${admin1}` : name;
+  const displayName = (admin1 && admin1.toLowerCase() !== name.toLowerCase()) ? `${name}, ${admin1}` : name;
 
   const weatherApiUrl = `${FORECAST_API_BASE_URL}?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,surface_pressure,visibility&daily=sunrise,sunset&wind_speed_unit=kmh&timezone=${timezone}`;
   const weatherResponse = await fetch(weatherApiUrl);
@@ -90,36 +88,43 @@ export async function fetchWeatherByLocationName(locationName: string): Promise<
     throw new Error(`Failed to fetch weather data for ${displayName}`);
   }
   const weatherApiData = await weatherResponse.json();
-  return transformApiDataToWeatherData(weatherApiData, displayName, country_code, geoData.utc_offset_seconds);
+  return transformApiDataToWeatherData(weatherApiData, displayName, country_code, utc_offset_seconds || 0);
 }
 
 export async function fetchWeatherByCoords(lat: number, lon: number): Promise<WeatherData> {
-  let displayName = "Current Location";
+  let displayName: string;
   let countryCode = "";
-  let timezoneIdentifier = "auto"; // Default to auto for weather API if geocoding fails
-  let utcOffsetSeconds = 0; // Will be updated from weather API if geocoding fails
+  let timezoneIdentifier = "auto"; 
+  let utcOffsetSeconds = 0; 
 
   try {
     const geoData = await getGeocodingDataByCoords(lat, lon);
-    if (geoData) {
-      displayName = (geoData.admin1 && geoData.admin1 !== geoData.name) ? `${geoData.name}, ${geoData.admin1}` : geoData.name;
-      countryCode = geoData.country_code;
-      timezoneIdentifier = geoData.timezone; // Use specific timezone from geocoding
-      utcOffsetSeconds = geoData.utc_offset_seconds;
+    if (geoData && geoData.name) { 
+      displayName = (geoData.admin1 && geoData.admin1.toLowerCase() !== geoData.name.toLowerCase())
+                     ? `${geoData.name}, ${geoData.admin1}`
+                     : geoData.name;
+      countryCode = geoData.country_code || "";
+      timezoneIdentifier = geoData.timezone || "auto"; 
+      utcOffsetSeconds = geoData.utc_offset_seconds || 0;
+    } else {
+      displayName = `Coords: ${lat.toFixed(2)}, ${lon.toFixed(2)}`;
+      console.warn(`Using coordinates as display name because geocoding for ${lat},${lon} failed or returned no name.`);
     }
   } catch (e) {
-    console.warn("Failed to get location name from coordinates, using default.", e);
+    console.warn("Error during geocoding by coords, using coordinates as display name.", e);
+    displayName = `Coords: ${lat.toFixed(2)}, ${lon.toFixed(2)}`;
   }
 
   const weatherApiUrl = `${FORECAST_API_BASE_URL}?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,surface_pressure,visibility&daily=sunrise,sunset&wind_speed_unit=kmh&timezone=${timezoneIdentifier}`;
   const weatherResponse = await fetch(weatherApiUrl);
   if (!weatherResponse.ok) {
-    throw new Error(`Failed to fetch weather data for coordinates ${lat}, ${lon}`);
+    // Use the determined displayName in the error message for consistency
+    throw new Error(`Failed to fetch weather data for ${displayName}`);
   }
   const weatherApiData = await weatherResponse.json();
   
-  // If geocoding failed earlier, use UTC offset from weather API
-  const finalUtcOffsetSeconds = utcOffsetSeconds || weatherApiData.utc_offset_seconds;
+  // Ensure utcOffsetSeconds is a number, prefer value from geocoding if specific, else from weather API, else 0.
+  const finalUtcOffsetSeconds = utcOffsetSeconds || weatherApiData.utc_offset_seconds || 0;
 
   return transformApiDataToWeatherData(weatherApiData, displayName, countryCode, finalUtcOffsetSeconds);
 }
@@ -153,10 +158,11 @@ function transformApiDataToWeatherData(
     icon: iconKey,
     feelsLike: current.apparent_temperature ? Math.round(current.apparent_temperature) : undefined,
     pressure: current.surface_pressure ? Math.round(current.surface_pressure) : undefined,
-    visibility: current.visibility, // Assuming this is in meters as per Open-Meteo docs
+    visibility: current.visibility, 
     sunrise: sunriseTimestamp,
     sunset: sunsetTimestamp,
-    timezone: utcOffsetSeconds, // utc_offset_seconds from Open-Meteo
+    timezone: utcOffsetSeconds, 
     country: countryCode ? countryCode.toUpperCase() : undefined,
   };
 }
+
