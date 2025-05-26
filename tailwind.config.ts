@@ -49,16 +49,6 @@ export default {
   				'3': 'hsl(var(--chart-3))',
   				'4': 'hsl(var(--chart-4))',
   				'5': 'hsl(var(--chart-5))'
-  			},
-  			sidebar: {
-  				DEFAULT: 'hsl(var(--sidebar-background))',
-  				foreground: 'hsl(var(--sidebar-foreground))',
-  				primary: 'hsl(var(--sidebar-primary))',
-  				'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
-  				accent: 'hsl(var(--sidebar-accent))',
-  				'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
-  				border: 'hsl(var(--sidebar-border))',
-  				ring: 'hsl(var(--sidebar-ring))'
   			}
   		},
   		borderRadius: {
@@ -82,11 +72,41 @@ export default {
   				to: {
   					height: '0'
   				}
-  			}
+  			},
+        spin: {
+          from: { transform: 'rotate(0deg)' },
+          to: { transform: 'rotate(360deg)' },
+        },
+        float: {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-5px)' },
+        },
+        fall: {
+          to: { transform: 'translateY(20px)', opacity: '0' },
+        },
+        slide: {
+          '0%': { transform: 'translateX(-10px)', opacity: '0' },
+          '50%': { transform: 'translateX(0px)', opacity: '1' },
+          '100%': { transform: 'translateX(10px)', opacity: '0' },
+        },
+        flash: {
+          '0%, 50%, 100%': { opacity: '1' },
+          '25%, 75%': { opacity: '0.3'},
+        },
+        fadeInUp: {
+          from: { opacity: '0', transform: 'translateY(20px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
   		},
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
-  			'accordion-up': 'accordion-up 0.2s ease-out'
+  			'accordion-up': 'accordion-up 0.2s ease-out',
+        'spin-slow': 'spin 10s linear infinite',
+        'float': 'float 6s ease-in-out infinite',
+        'fall': 'fall 1s linear infinite',
+        'slide': 'slide 1.5s ease-in-out infinite',
+        'flash': 'flash 1.5s linear infinite',
+        'fade-in-up': 'fadeInUp 0.5s ease-out forwards',
   		}
   	}
   },
