@@ -26,11 +26,28 @@ export default function HomePage() {
       const suggestions = await suggestActivities(input);
       setActivitySuggestions(suggestions.activities);
     } catch (err) {
-      console.error('Failed to fetch activity suggestions:', err);
+      let toastTitle = "Activity Suggestion Error";
+      let toastDescription = "Could not fetch activity suggestions at this time.";
+      let toastVariant: "default" | "destructive" = "destructive";
+
+      if (err instanceof Error) {
+        if (err.message.includes('429') || err.message.toLowerCase().includes('quota')) {
+          toastTitle = "Suggestion Limit Reached";
+          toastDescription = "Too many requests for activity suggestions. Please try again in a few minutes.";
+          toastVariant = "default"; // Use default variant for rate limit message
+          console.warn('Activity suggestion rate limit hit:', err.message);
+        } else {
+          console.error('Failed to fetch activity suggestions:', err.message);
+        }
+      } else {
+        console.error('Failed to fetch activity suggestions: An unknown error occurred', err);
+        toastDescription = "An unexpected error occurred while fetching activity suggestions.";
+      }
+
       toast({
-        title: "Activity Suggestion Error",
-        description: "Could not fetch activity suggestions at this time.",
-        variant: "default",
+        title: toastTitle,
+        description: toastDescription,
+        variant: toastVariant,
       });
       setActivitySuggestions([]);
     } finally {
