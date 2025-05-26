@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Header } from '@/components/Header';
 import { LocationSearchBar } from '@/components/LocationSearchBar';
 import { ActivitySuggestionCard } from '@/components/ActivitySuggestionCard';
@@ -20,6 +20,11 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
+  const weatherDataRef = useRef<WeatherData | null>(null);
+  useEffect(() => {
+    weatherDataRef.current = weatherData;
+  }, [weatherData]);
+
   const fetchActivitySuggestions = useCallback(async (input: SuggestActivitiesInput) => {
     setIsLoadingActivities(true);
     try {
@@ -34,7 +39,7 @@ export default function HomePage() {
         if (err.message.includes('429') || err.message.toLowerCase().includes('quota')) {
           toastTitle = "Suggestion Limit Reached";
           toastDescription = "Too many requests for activity suggestions. Please try again in a few minutes.";
-          toastVariant = "default"; // Use default variant for rate limit message
+          toastVariant = "default";
           console.warn('Activity suggestion rate limit hit:', err.message);
         } else {
           console.error('Failed to fetch activity suggestions:', err.message);
@@ -43,12 +48,7 @@ export default function HomePage() {
         console.error('Failed to fetch activity suggestions: An unknown error occurred', err);
         toastDescription = "An unexpected error occurred while fetching activity suggestions.";
       }
-
-      toast({
-        title: toastTitle,
-        description: toastDescription,
-        variant: toastVariant,
-      });
+      toast({ title: toastTitle, description: toastDescription, variant: toastVariant });
       setActivitySuggestions([]);
     } finally {
       setIsLoadingActivities(false);
@@ -61,12 +61,20 @@ export default function HomePage() {
       return null;
     }
 
+    const currentWeatherData = weatherDataRef.current;
+    let preventDataClear = false;
+    if (!isGeoCall && currentWeatherData && currentWeatherData.location) {
+      const currentLocCity = currentWeatherData.location.split(',')[0].trim().toLowerCase();
+      const queryLc = query.toLowerCase();
+      if (queryLc === currentLocCity) {
+        preventDataClear = true;
+      }
+    }
+
     setIsLoadingWeather(true);
     setError(null);
-    // Only clear weather data if it's not a geo call that might be re-fetching for a name update
-    // or if it's a new non-geo search.
-    if (!isGeoCall || (isGeoCall && weatherData?.location !== query)) {
-        setWeatherData(null);
+    if (!preventDataClear) {
+      setWeatherData(null);
     }
     setActivitySuggestions([]);
 
@@ -80,110 +88,104 @@ export default function HomePage() {
       } else {
         data = await fetchWeatherByLocationName(query);
       }
-      setWeatherData(data);
 
-      if (data && data.condition !== "Generic") {
-        fetchActivitySuggestions({ weatherCondition: data.condition, location: data.location });
-      } else if (data && data.condition === "Generic") {
-         toast({
-          title: "Weather Information",
-          description: `Displaying generic weather for "${query}". This might indicate an issue with specific data.`,
-          variant: "default",
-        });
+      if (data) {
+        setWeatherData(data);
+        if (data.condition !== "Generic") {
+          fetchActivitySuggestions({ weatherCondition: data.condition, location: data.location });
+        } else {
+           toast({
+            title: "Weather Information",
+            description: `Displaying generic weather for "${query}". This might indicate an issue with specific data.`,
+            variant: "default",
+          });
+        }
+      } else {
+         if (!preventDataClear) setWeatherData(null);
       }
       return data;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch weather data.';
-      setError(errorMessage); // This will be displayed by WeatherDisplayCard if needed
-      toast({
-        title: "Weather Error",
-        description: errorMessage,
-        variant: "destructive",
-      });
-      setWeatherData(null);
+      setError(errorMessage);
+      toast({ title: "Weather Error", description: errorMessage, variant: "destructive" });
+      if (!preventDataClear) setWeatherData(null);
       return null;
     } finally {
       setIsLoadingWeather(false);
     }
-  }, [toast, fetchActivitySuggestions, weatherData?.location]);
+  }, [toast, fetchActivitySuggestions]);
 
 
-  const handleDebouncedSearch = useCallback(async (query: string) => {
-    await performWeatherFetch(query, false);
-  }, [performWeatherFetch]);
+  const defaultToBangalore = useCallback((failureReason: string) => {
+    const cleanedReason = failureReason.endsWith('.') ? failureReason.slice(0, -1) : failureReason;
+    toast({
+      title: "Location Error",
+      description: `${cleanedReason}. Defaulting to Bangalore.`,
+      variant: "default",
+    });
+    setSearchQuery('Bangalore'); // This will trigger debounced search
+    setIsLoadingWeather(false); // Ensure loading state is reset if this was part of a sequence
+  }, [toast]);
 
 
   const handleGeoLocationSearch = useCallback(async () => {
     setSearchQuery('Locating...');
     setIsLoadingWeather(true);
     setError(null);
-    // Do not clear weather data here, allow performWeatherFetch to manage it
     setActivitySuggestions([]);
-
-    const defaultToBangalore = async (failureReason: string) => {
-      const cleanedReason = failureReason.endsWith('.') ? failureReason.slice(0, -1) : failureReason;
-      toast({
-        title: "Location Error",
-        description: `${cleanedReason}. Defaulting to Bangalore.`,
-        variant: "default",
-      });
-      setSearchQuery('Bangalore');
-      await performWeatherFetch('Bangalore', false);
-    };
 
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
           const { latitude, longitude } = position.coords;
-
           if (typeof latitude !== 'number' || isNaN(latitude) || typeof longitude !== 'number' || isNaN(longitude)) {
-            await defaultToBangalore("Failed to get valid coordinates");
+            defaultToBangalore("Failed to get valid coordinates");
             return;
           }
-
           const coordQuery = `${latitude},${longitude}`;
-          const weatherResult = await performWeatherFetch(coordQuery, true);
+          const weatherResultFromCoords = await performWeatherFetch(coordQuery, true);
 
-          if (weatherResult && weatherResult.location) {
-            const newLocationName = weatherResult.location.split(',')[0].trim();
-            const isCoordBasedName = newLocationName.startsWith("Coords:") || newLocationName === "Unknown Coordinates";
-            
+          if (weatherResultFromCoords && weatherResultFromCoords.location) {
+            const locationNameFromCoords = weatherResultFromCoords.location.split(',')[0].trim();
+            const isCoordBasedName = locationNameFromCoords.startsWith("Coords:") || locationNameFromCoords === "Unknown Coordinates";
             if (!isCoordBasedName) {
-              setSearchQuery(newLocationName); 
+              setSearchQuery(locationNameFromCoords); // Triggers debounced search for this city
             } else {
               toast({
                 title: "Location Information",
                 description: "Showing weather for your coordinates. City name not found, search defaults to Bangalore.",
                 variant: "default",
               });
-              setSearchQuery('Bangalore'); 
-              // If weatherResult for coords was successful, it's already displayed.
-              // No need to re-fetch Bangalore unless weatherResult was null.
-              if (!weatherData) { // If the coord fetch failed to set weather data
-                await performWeatherFetch('Bangalore', false);
-              }
+              setSearchQuery('Bangalore'); // Triggers debounced search for Bangalore
             }
           } else {
-            // performWeatherFetch failed for coordinates or returned no location
-            await defaultToBangalore("Could not fetch weather for your location");
+            defaultToBangalore("Could not fetch weather for your location");
           }
+          setIsLoadingWeather(false); 
         },
         async (geoError: GeolocationPositionError) => {
-          await defaultToBangalore(`Geolocation failed: ${geoError.message}`);
+          defaultToBangalore(`Geolocation failed: ${geoError.message}`);
         }
       );
     } else {
-      await defaultToBangalore("Geolocation is not supported by your browser");
+      defaultToBangalore("Geolocation is not supported by your browser");
     }
-  }, [performWeatherFetch, toast, weatherData]); 
+  }, [performWeatherFetch, toast, defaultToBangalore]);
+
+  const handleDebouncedSearch = useCallback(async (query: string) => {
+    if (query === 'Locating...' || !query.trim()) {
+      return; // Don't search for placeholder or empty strings
+    }
+    await performWeatherFetch(query, false);
+  }, [performWeatherFetch]);
 
   useEffect(() => {
-    // Only on initial load if no query/data and not already loading
-    if (!searchQuery && !weatherData && !isLoadingWeather) {
+    const currentWeatherData = weatherDataRef.current;
+    if (!searchQuery && !currentWeatherData && !isLoadingWeather) {
         handleGeoLocationSearch();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Intentionally run once on mount
+  }, []); // Intentionally run once on mount to attempt geolocation
 
 
   return (
@@ -213,4 +215,3 @@ export default function HomePage() {
     </div>
   );
 }
-
