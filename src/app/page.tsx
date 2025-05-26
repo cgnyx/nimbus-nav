@@ -4,8 +4,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Header } from '@/components/Header';
 import { LocationSearchBar } from '@/components/LocationSearchBar';
+import { ActivitySuggestionCard } from '@/components/ActivitySuggestionCard'; 
 import { WeatherDisplayCard } from '@/components/WeatherDisplayCard';
-import type { ActivitySuggestionCard } from '@/components/ActivitySuggestionCard'; // Corrected import name if necessary
 import type { WeatherData } from '@/types';
 import { fetchWeatherByLocationName, fetchWeatherByCoords } from '@/lib/weather-api';
 import { suggestActivities, type SuggestActivitiesInput } from '@/ai/flows/suggest-activities';
@@ -37,8 +37,14 @@ export default function HomePage() {
         data = await fetchWeatherByLocationName(query);
       }
       setWeatherData(data);
+
       if (data && data.location && data.condition !== "Generic") {
-        setSearchQuery(data.location.split(',')[0]); 
+        // Only update searchQuery if it's a geolocation request.
+        // For typed searches, searchQuery already holds the user's input.
+        // Updating it from data.location can cause loops if there are minor differences (e.g., case).
+        if (isGeoLocation) {
+          setSearchQuery(data.location.split(',')[0]); 
+        }
       }
 
 
