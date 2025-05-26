@@ -30,24 +30,28 @@ export default function HomePage() {
       toast({
         title: "Activity Suggestion Error",
         description: "Could not fetch activity suggestions at this time.",
-        variant: "default", // Changed from destructive as it's a secondary feature
+        variant: "default",
       });
-      setActivitySuggestions([]); // Clear previous suggestions on error
+      setActivitySuggestions([]);
     } finally {
       setIsLoadingActivities(false);
     }
   }, [toast]);
 
   const performWeatherFetch = useCallback(async (query: string, isGeoCall: boolean): Promise<WeatherData | null> => {
-    if (!query && !isGeoCall) { // If query is empty and it's not a geo call, do nothing.
-      setIsLoadingWeather(false); // Ensure loading is false if we bail early.
+    if (!query && !isGeoCall) {
+      setIsLoadingWeather(false);
       return null;
     }
 
     setIsLoadingWeather(true);
     setError(null);
-    setWeatherData(null); // Clear previous weather data before new fetch
-    setActivitySuggestions([]); // Clear activity suggestions too
+    // Only clear weather data if it's not a geo call that might be re-fetching for a name update
+    // or if it's a new non-geo search.
+    if (!isGeoCall || (isGeoCall && weatherData?.location !== query)) {
+        setWeatherData(null);
+    }
+    setActivitySuggestions([]);
 
     try {
       let data;
@@ -55,7 +59,6 @@ export default function HomePage() {
         const [latStr, lonStr] = query.split(',');
         const lat = parseFloat(latStr);
         const lon = parseFloat(lonStr);
-        // fetchWeatherByCoords will throw if lat/lon are NaN or invalid
         data = await fetchWeatherByCoords(lat, lon);
       } else {
         data = await fetchWeatherByLocationName(query);
@@ -71,46 +74,44 @@ export default function HomePage() {
           variant: "default",
         });
       }
-      return data; // Return data for the caller to inspect (e.g., handleGeoLocationSearch)
+      return data;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch weather data.';
-      setError(errorMessage);
+      setError(errorMessage); // This will be displayed by WeatherDisplayCard if needed
       toast({
         title: "Weather Error",
         description: errorMessage,
         variant: "destructive",
       });
-      setWeatherData(null); // Ensure weather data is null on error
-      return null; // Return null on error
+      setWeatherData(null);
+      return null;
     } finally {
       setIsLoadingWeather(false);
     }
-  }, [toast, fetchActivitySuggestions]);
+  }, [toast, fetchActivitySuggestions, weatherData?.location]);
 
 
   const handleDebouncedSearch = useCallback(async (query: string) => {
-    // For debounced search, the searchQuery is already set by user input.
-    // We just need to fetch.
     await performWeatherFetch(query, false);
   }, [performWeatherFetch]);
 
 
   const handleGeoLocationSearch = useCallback(async () => {
-    setSearchQuery('Locating...'); // Visual feedback
+    setSearchQuery('Locating...');
     setIsLoadingWeather(true);
     setError(null);
-    setWeatherData(null);
+    // Do not clear weather data here, allow performWeatherFetch to manage it
     setActivitySuggestions([]);
 
-    const defaultToBangalore = async (reason: string) => {
+    const defaultToBangalore = async (failureReason: string) => {
+      const cleanedReason = failureReason.endsWith('.') ? failureReason.slice(0, -1) : failureReason;
       toast({
         title: "Location Error",
-        description: `${reason}. Defaulting to Bangalore.`,
+        description: `${cleanedReason}. Defaulting to Bangalore.`,
         variant: "default",
       });
       setSearchQuery('Bangalore');
       await performWeatherFetch('Bangalore', false);
-      // setIsLoadingWeather(false); // performWeatherFetch handles this
     };
 
     if (navigator.geolocation) {
@@ -129,20 +130,21 @@ export default function HomePage() {
           if (weatherResult && weatherResult.location) {
             const newLocationName = weatherResult.location.split(',')[0].trim();
             const isCoordBasedName = newLocationName.startsWith("Coords:") || newLocationName === "Unknown Coordinates";
-
+            
             if (!isCoordBasedName) {
-              setSearchQuery(newLocationName); // Update search bar to the resolved city name
+              setSearchQuery(newLocationName); 
             } else {
-              // Weather for coords is shown, but search bar/query defaults to Bangalore
               toast({
                 title: "Location Information",
                 description: "Showing weather for your coordinates. City name not found, search defaults to Bangalore.",
                 variant: "default",
               });
               setSearchQuery('Bangalore'); 
-              // Do not re-fetch here if weatherResult for coords was successful,
-              // as performWeatherFetch already displayed it.
-              // If we wanted to *replace* coords weather with Bangalore weather, we'd fetch here.
+              // If weatherResult for coords was successful, it's already displayed.
+              // No need to re-fetch Bangalore unless weatherResult was null.
+              if (!weatherData) { // If the coord fetch failed to set weather data
+                await performWeatherFetch('Bangalore', false);
+              }
             }
           } else {
             // performWeatherFetch failed for coordinates or returned no location
@@ -156,14 +158,15 @@ export default function HomePage() {
     } else {
       await defaultToBangalore("Geolocation is not supported by your browser");
     }
-  }, [performWeatherFetch, toast]); // searchQuery removed as it's managed internally now
+  }, [performWeatherFetch, toast, weatherData]); 
 
   useEffect(() => {
-    if (!searchQuery && !weatherData) { // Only on initial load if no query/data
+    // Only on initial load if no query/data and not already loading
+    if (!searchQuery && !weatherData && !isLoadingWeather) {
         handleGeoLocationSearch();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handleGeoLocationSearch]); // handleGeoLocationSearch is stable
+  }, []); // Intentionally run once on mount
 
 
   return (
@@ -171,13 +174,13 @@ export default function HomePage() {
       <Header />
       <LocationSearchBar
         value={searchQuery}
-        onChange={setSearchQuery} // Allow LocationSearchBar to update searchQuery
-        onSearch={handleDebouncedSearch} // Pass the debounced search handler
+        onChange={setSearchQuery}
+        onSearch={handleDebouncedSearch}
         onLocateMe={handleGeoLocationSearch}
         isLoading={isLoadingWeather}
       />
 
-      {error && !isLoadingWeather && !weatherData && ( // Only show general error if no data and not loading
+      {error && !isLoadingWeather && !weatherData && (
         <div className="text-destructive text-center my-4 p-4 bg-destructive/10 rounded-md">{error}</div>
       )}
 
@@ -193,3 +196,4 @@ export default function HomePage() {
     </div>
   );
 }
+
