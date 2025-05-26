@@ -38,17 +38,13 @@ export default function HomePage() {
     }
   }, [toast]);
 
-  // Core weather fetching logic, designed to be stable.
-  // It does not directly set searchQuery state from API response for typed searches.
   const performWeatherFetch = useCallback(async (query: string, isGeoCall: boolean): Promise<WeatherData | null> => {
     if (!query && !isGeoCall) {
-      // If query is empty and it's not a geolocation call (which uses coordinates in query string), do nothing.
-      // Geolocation calls will have a query string like "lat,lon".
-      setIsLoadingWeather(false); // Ensure loading is stopped if we bail early
+      setIsLoadingWeather(false);
       return null;
     }
 
-    setIsLoadingWeather(true); // This is line 26 from the error
+    setIsLoadingWeather(true);
     setError(null);
     setWeatherData(null);
     setActivitySuggestions([]);
@@ -72,7 +68,7 @@ export default function HomePage() {
           variant: "default",
         });
       }
-      return data; // Return data so the caller can decide about searchQuery
+      return data;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch weather data.';
       setError(errorMessage);
@@ -88,19 +84,14 @@ export default function HomePage() {
     }
   }, [toast, fetchActivitySuggestions]);
 
-
-  // Handler for debounced text search from LocationSearchBar
   const handleDebouncedSearch = useCallback(async (query: string) => {
     await performWeatherFetch(query, false);
-    // For text searches, searchQuery is already up-to-date from user input.
-    // We don't set searchQuery here based on API response to avoid loops.
   }, [performWeatherFetch]);
 
-  // Handler for "Locate Me" button and initial geolocation
   const handleGeoLocationSearch = useCallback(async () => {
     if (navigator.geolocation) {
-      setSearchQuery('Locating...'); // Update input to show locating status
-      setIsLoadingWeather(true); // Manage loading state for this action
+      setSearchQuery('Locating...');
+      setIsLoadingWeather(true); 
       setError(null);
       setWeatherData(null);
       setActivitySuggestions([]);
@@ -109,52 +100,66 @@ export default function HomePage() {
         async (position) => {
           const { latitude, longitude } = position.coords;
           const coordQuery = `${latitude},${longitude}`;
-          const weatherResult = await performWeatherFetch(coordQuery, true); // isGeoCall is true
+          const weatherResult = await performWeatherFetch(coordQuery, true); 
 
           if (weatherResult && weatherResult.location) {
-            // Update searchQuery with the actual city name from API for geolocation
             const newLocationName = weatherResult.location.split(',')[0];
             setSearchQuery(newLocationName);
+          } else {
+            toast({
+              title: "Location Information",
+              description: "Could not determine your specific location. Defaulting to Bangalore.",
+              variant: "default",
+            });
+            setSearchQuery('Bangalore');
+            await performWeatherFetch('Bangalore', false);
           }
-          // performWeatherFetch will set isLoadingWeather to false in its finally block
         },
-        (geoError: GeolocationPositionError) => {
+        async (geoError: GeolocationPositionError) => {
           setIsLoadingWeather(false);
-          const errorMessage = `Geolocation failed: ${geoError.message}`;
-          setError(errorMessage);
+          const errorMessage = `Geolocation failed: ${geoError.message}. Defaulting to Bangalore.`;
+          // setError will be set by performWeatherFetch if Bangalore fails, or cleared if it succeeds.
           toast({
             title: "Location Error",
             description: errorMessage,
-            variant: "destructive",
+            variant: "default", // Not destructive as we are falling back
           });
-          setSearchQuery(''); // Clear "Locating..."
+          setSearchQuery('Bangalore');
+          await performWeatherFetch('Bangalore', false);
         }
       );
     } else {
-      setError('Geolocation is not supported by your browser.');
+      setIsLoadingWeather(false); 
+      const description = "Geolocation is not supported by your browser. Defaulting to Bangalore.";
+      // setError will be set by performWeatherFetch
       toast({
         title: "Location Error",
-        description: "Geolocation is not supported by your browser.",
-        variant: "destructive",
+        description: description,
+        variant: "default",
       });
-      setSearchQuery('');
-      setIsLoadingWeather(false); // Ensure loading is stopped
+      setSearchQuery('Bangalore');
+      await performWeatherFetch('Bangalore', false);
     }
-  }, [performWeatherFetch, toast ]); // Dependencies for handleGeoLocationSearch
+  }, [performWeatherFetch, toast]); 
 
   useEffect(() => {
-    handleGeoLocationSearch();
+    // Only call handleGeoLocationSearch if searchQuery is not already set (e.g. by user interaction before mount effect)
+    // and weatherData is not already loaded. This prevents re-fetching on hot reloads if data exists.
+    if (!searchQuery && !weatherData) {
+        handleGeoLocationSearch();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handleGeoLocationSearch]); // Runs once on mount as handleGeoLocationSearch is stable
+  }, [handleGeoLocationSearch]); // handleGeoLocationSearch is stable. Add other missing dependencies if ESLint suggests and they are truly needed.
+
 
   return (
     <div className="container mx-auto px-4 py-8 flex flex-col items-center w-full">
       <Header />
       <LocationSearchBar
         value={searchQuery}
-        onChange={setSearchQuery} // Directly sets searchQuery state
-        onSearch={handleDebouncedSearch} // Memoized handler for debounced search
-        onLocateMe={handleGeoLocationSearch} // Memoized handler for locate me button
+        onChange={setSearchQuery}
+        onSearch={handleDebouncedSearch}
+        onLocateMe={handleGeoLocationSearch}
         isLoading={isLoadingWeather}
       />
 
