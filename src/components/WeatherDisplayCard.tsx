@@ -1,13 +1,15 @@
+
 import type { WeatherData } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { AnimatedWeatherIcon } from '@/components/AnimatedWeatherIcon';
-import { GenericWeatherIcon } from '@/components/weather-icons/GenericWeatherIcon'; // Added import
-import { Droplets, Wind, Thermometer, Sunrise, Sunset, Gauge, Eye, MapPin } from 'lucide-react';
+import { GenericWeatherIcon } from './weather-icons/GenericWeatherIcon';
+import { Droplets, Wind, Thermometer, Sunrise, Sunset, Gauge, Eye, MapPin, AlertTriangle } from 'lucide-react';
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface WeatherDisplayCardProps {
   weatherData: WeatherData | null;
   isLoading: boolean;
+  error?: string | null; // Pass error specifically for "not found" type messages tied to a location
 }
 
 const DetailItem = ({ icon: Icon, label, value, unit }: { icon: React.ElementType, label: string, value?: string | number, unit?: string }) => (
@@ -20,12 +22,13 @@ const DetailItem = ({ icon: Icon, label, value, unit }: { icon: React.ElementTyp
 
 const formatTime = (timestamp?: number, timezoneOffset?: number): string => {
   if (timestamp === undefined || timezoneOffset === undefined) return 'N/A';
-  const date = new Date((timestamp + timezoneOffset) * 1000);
+  // Create a date object assuming the timestamp is UTC, then adjust by the offset
+  const date = new Date((timestamp + timezoneOffset) * 1000); 
   return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC', hour12: true });
 };
 
 
-export function WeatherDisplayCard({ weatherData, isLoading }: WeatherDisplayCardProps) {
+export function WeatherDisplayCard({ weatherData, isLoading, error }: WeatherDisplayCardProps) {
   if (isLoading) {
     return (
       <Card className="w-full max-w-2xl shadow-xl rounded-xl overflow-hidden fade-in-up">
@@ -52,6 +55,28 @@ export function WeatherDisplayCard({ weatherData, isLoading }: WeatherDisplayCar
     );
   }
 
+  // If there's an error message (like location not found) and no weather data, display it
+  if (error && !weatherData) {
+    return (
+      <Card className="w-full max-w-2xl shadow-xl rounded-xl p-8 text-center fade-in-up bg-destructive/10 border-destructive">
+        <CardHeader>
+            <div className="flex items-center justify-center gap-2 text-destructive">
+                 <AlertTriangle className="w-8 h-8" />
+                <CardTitle className="text-2xl">{error.startsWith('Location not found:') ? 'Location Not Found' : 'Error'}</CardTitle>
+            </div>
+        </CardHeader>
+        <CardContent>
+            <p className="text-lg text-destructive/90">
+              {error.startsWith('Location not found:') ? 
+               `We couldn't find weather data for "${error.substring('Location not found:'.length).trim()}". Please check the spelling or try another location.` 
+               : error}
+            </p>
+            <GenericWeatherIcon className="w-32 h-32 mx-auto mt-4 opacity-30" />
+        </CardContent>
+      </Card>
+    );
+  }
+  
   if (!weatherData) {
     return (
        <Card className="w-full max-w-2xl shadow-xl rounded-xl p-8 text-center fade-in-up">
@@ -65,22 +90,6 @@ export function WeatherDisplayCard({ weatherData, isLoading }: WeatherDisplayCar
       </Card>
     );
   }
-  
-  // Handle "Location not found" scenario specifically
-  if (weatherData.condition === "Generic" && weatherData.location.includes("(not found")) {
-    return (
-      <Card className="w-full max-w-2xl shadow-xl rounded-xl p-8 text-center fade-in-up">
-        <CardHeader>
-            <CardTitle className="text-2xl text-destructive">{weatherData.location.split('(')[0].trim()} Not Found</CardTitle>
-        </CardHeader>
-        <CardContent>
-            <p className="text-lg text-muted-foreground">Please check the spelling or try a different location.</p>
-            <GenericWeatherIcon className="w-32 h-32 mx-auto mt-4 opacity-50" />
-        </CardContent>
-      </Card>
-    );
-  }
-
 
   return (
     <Card className="w-full max-w-2xl shadow-xl rounded-xl overflow-hidden bg-card/80 backdrop-blur-sm border-primary/20 fade-in-up">

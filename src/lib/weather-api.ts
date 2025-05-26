@@ -1,159 +1,162 @@
+
 import type { WeatherData, WeatherConditionKey } from '@/types';
 
-// A simplified mapping from OpenWeatherMap main conditions to our WeatherConditionKey
-const mapConditionToIconKey = (condition: string): WeatherConditionKey => {
-  const lowerCondition = condition.toLowerCase();
-  if (lowerCondition.includes('clear')) return 'Sunny';
-  if (lowerCondition.includes('clouds')) {
-    if (lowerCondition.includes('few clouds') || lowerCondition.includes('scattered clouds')) return 'PartlyCloudy';
-    return 'Cloudy';
-  }
-  if (lowerCondition.includes('rain') || lowerCondition.includes('drizzle')) return 'Rainy';
-  if (lowerCondition.includes('thunderstorm')) return 'Thunderstorm';
-  if (lowerCondition.includes('snow')) return 'Snowy';
-  if (lowerCondition.includes('mist') || lowerCondition.includes('smoke') || lowerCondition.includes('haze') || lowerCondition.includes('dust') || lowerCondition.includes('fog') || lowerCondition.includes('sand') || lowerCondition.includes('ash') || lowerCondition.includes('squall') || lowerCondition.includes('tornado')) return 'Foggy'; // Grouping these as 'Foggy' for simplicity, can be expanded
-  // 'Windy' is often derived from wind speed, not a direct condition string from OWM main.
-  // We will handle windy display based on windSpeed value in the component.
-  return 'Generic'; // Default fallback
+const GEOCODING_API_BASE_URL = "https://geocoding-api.open-meteo.com/v1/search";
+const FORECAST_API_BASE_URL = "https://api.open-meteo.com/v1/forecast";
+
+const wmoCodeToDescription = (code: number): { main: string, description: string } => {
+  const codes: Record<number, { main: string, description: string }> = {
+    0: { main: "Clear", description: "Clear sky" },
+    1: { main: "Mostly Clear", description: "Mainly clear" },
+    2: { main: "Partly Cloudy", description: "Partly cloudy" },
+    3: { main: "Cloudy", description: "Overcast" },
+    45: { main: "Fog", description: "Fog" },
+    48: { main: "Fog", description: "Depositing rime fog" },
+    51: { main: "Drizzle", description: "Light drizzle" },
+    53: { main: "Drizzle", description: "Moderate drizzle" },
+    55: { main: "Drizzle", description: "Dense drizzle" },
+    56: { main: "Freezing Drizzle", description: "Light freezing drizzle" },
+    57: { main: "Freezing Drizzle", description: "Dense freezing drizzle" },
+    61: { main: "Rain", description: "Slight rain" },
+    63: { main: "Rain", description: "Moderate rain" },
+    65: { main: "Rain", description: "Heavy rain" },
+    66: { main: "Freezing Rain", description: "Light freezing rain" },
+    67: { main: "Freezing Rain", description: "Heavy freezing rain" },
+    71: { main: "Snow", description: "Slight snow fall" },
+    73: { main: "Snow", description: "Moderate snow fall" },
+    75: { main: "Snow", description: "Heavy snow fall" },
+    77: { main: "Snow", description: "Snow grains" },
+    80: { main: "Rain Showers", description: "Slight rain showers" },
+    81: { main: "Rain Showers", description: "Moderate rain showers" },
+    82: { main: "Rain Showers", description: "Violent rain showers" },
+    85: { main: "Snow Showers", description: "Slight snow showers" },
+    86: { main: "Snow Showers", description: "Heavy snow showers" },
+    95: { main: "Thunderstorm", description: "Thunderstorm" }, // Simplified main
+    96: { main: "Thunderstorm", description: "Thunderstorm with slight hail" },
+    99: { main: "Thunderstorm", description: "Thunderstorm with heavy hail" },
+  };
+  return codes[code] || { main: "Unknown", description: "Unknown weather code" };
 };
 
-
-// This is a MOCK function. In a real app, you would fetch from a live API.
-// The structure here mimics a response from an API like OpenWeatherMap.
-const MOCK_API_RESPONSES: Record<string, any> = {
-  "new york": {
-    coord: { lon: -74.006, lat: 40.7128 },
-    weather: [{ id: 803, main: "Clouds", description: "broken clouds", icon: "04d" }],
-    base: "stations",
-    main: { temp: 12.3, feels_like: 11.5, temp_min: 10.5, temp_max: 13.5, pressure: 1012, humidity: 60 },
-    visibility: 10000,
-    wind: { speed: 5.1, deg: 200 }, // speed in m/s
-    clouds: { all: 75 },
-    dt: Date.now() / 1000,
-    sys: { type: 1, id: 4610, country: "US", sunrise: 1661834238, sunset: 1661882218 },
-    timezone: -14400, // Shift in seconds from UTC
-    id: 5128581,
-    name: "New York",
-    cod: 200,
-  },
-  "london": {
-    coord: { lon: -0.1276, lat: 51.5072 },
-    weather: [{ id: 500, main: "Rain", description: "light rain", icon: "10d" }],
-    main: { temp: 10.0, feels_like: 9.0, pressure: 1005, humidity: 85 },
-    wind: { speed: 7.2, deg: 240 }, // m/s
-    name: "London",
-    sys: { country: "GB", sunrise: 1661830000, sunset: 1661878000 },
-    timezone: 3600,
-  },
-   "tokyo": {
-    coord: { lon: 139.6917, lat: 35.6895 },
-    weather: [{ id: 800, main: "Clear", description: "clear sky", icon: "01d" }],
-    main: { temp: 25.0, feels_like: 26.0, pressure: 1015, humidity: 50 },
-    wind: { speed: 2.5, deg: 180 }, // m/s
-    name: "Tokyo",
-    sys: { country: "JP", sunrise: 1661810000, sunset: 1661858000 },
-    timezone: 32400,
-  },
+const mapWmoCodeToIconKey = (wmoCode: number): WeatherConditionKey => {
+  if (wmoCode === 0) return 'Sunny';
+  if (wmoCode >= 1 && wmoCode <= 2) return 'PartlyCloudy';
+  if (wmoCode === 3) return 'Cloudy';
+  if (wmoCode === 45 || wmoCode === 48) return 'Foggy';
+  if ((wmoCode >= 51 && wmoCode <= 57) || (wmoCode >= 61 && wmoCode <= 67) || (wmoCode >= 80 && wmoCode <= 82)) return 'Rainy';
+  if ((wmoCode >= 71 && wmoCode <= 77) || (wmoCode >= 85 && wmoCode <= 86)) return 'Snowy';
+  if (wmoCode >= 95 && wmoCode <= 99) return 'Thunderstorm';
+  return 'Generic';
 };
 
-// Mock geolocation API
-export async function fetchWeatherByCoords(lat: number, lon: number): Promise<WeatherData> {
-  // In a real app, find the closest city or use a reverse geocoding API
-  // For mock, let's just return London's data if it's somewhat near, else New York
-  let mockDataKey = "new york"; // Default
-  if (Math.abs(lat - 51.5) < 5 && Math.abs(lon - 0.12) < 5) { // Roughly near London
-      mockDataKey = "london";
+async function getGeocodingData(locationName: string): Promise<any> {
+  const response = await fetch(`${GEOCODING_API_BASE_URL}?name=${encodeURIComponent(locationName)}&count=1&language=en&format=json`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch geocoding data for ${locationName}`);
   }
-  
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const rawData = MOCK_API_RESPONSES[mockDataKey];
-      resolve(transformApiDataToWeatherData(rawData, rawData.name));
-    }, 500);
-  });
+  const data = await response.json();
+  if (!data.results || data.results.length === 0) {
+    throw new Error(`Location not found: ${locationName}`);
+  }
+  return data.results[0];
+}
+
+async function getGeocodingDataByCoords(lat: number, lon: number): Promise<any> {
+  const response = await fetch(`${GEOCODING_API_BASE_URL}?latitude=${lat}&longitude=${lon}&count=1&language=en&format=json`);
+   if (!response.ok) {
+    // Don't throw, as this is a secondary lookup. Allow weather fetch to proceed.
+    console.warn(`Failed to fetch geocoding data for coords ${lat},${lon}`);
+    return null;
+  }
+  const data = await response.json();
+  if (!data.results || data.results.length === 0) {
+     console.warn(`No geocoding results for coords ${lat},${lon}`);
+    return null;
+  }
+  return data.results[0];
 }
 
 
 export async function fetchWeatherByLocationName(locationName: string): Promise<WeatherData> {
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      const query = locationName.toLowerCase();
-      const rawData = MOCK_API_RESPONSES[query];
-      if (rawData) {
-        resolve(transformApiDataToWeatherData(rawData, locationName));
-      } else {
-        // Simulate a "city not found" scenario
-        const defaultData = MOCK_API_RESPONSES["new york"]; // Fallback to a default
-        const notFoundData = {
-          ...transformApiDataToWeatherData(defaultData, locationName),
-          location: `${locationName} (not found, showing default)`,
-          condition: "Generic",
-          icon: "Generic" as WeatherConditionKey,
-          description: "Location not found. Displaying default weather."
-        };
-         resolve(notFoundData); // Resolve with modified default data to indicate not found
-      }
-    }, 500);
-  });
+  const geoData = await getGeocodingData(locationName);
+  const { latitude, longitude, name, country_code, timezone, admin1 } = geoData;
+  
+  // Use admin1 (state/region) if available and different from city name for more context
+  const displayName = (admin1 && admin1 !== name) ? `${name}, ${admin1}` : name;
+
+  const weatherApiUrl = `${FORECAST_API_BASE_URL}?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,surface_pressure,visibility&daily=sunrise,sunset&wind_speed_unit=kmh&timezone=${timezone}`;
+  const weatherResponse = await fetch(weatherApiUrl);
+  if (!weatherResponse.ok) {
+    throw new Error(`Failed to fetch weather data for ${displayName}`);
+  }
+  const weatherApiData = await weatherResponse.json();
+  return transformApiDataToWeatherData(weatherApiData, displayName, country_code, geoData.utc_offset_seconds);
 }
 
-function transformApiDataToWeatherData(apiData: any, locationDisplayName: string): WeatherData {
-  const weatherConditionMain = apiData.weather && apiData.weather.length > 0 ? apiData.weather[0].main : "Unknown";
-  const weatherDescription = apiData.weather && apiData.weather.length > 0 ? apiData.weather[0].description : "No description";
-  
-  // Convert wind speed from m/s to km/h
-  const windSpeedKmh = apiData.wind && typeof apiData.wind.speed === 'number' 
-    ? parseFloat((apiData.wind.speed * 3.6).toFixed(1)) 
-    : 0;
+export async function fetchWeatherByCoords(lat: number, lon: number): Promise<WeatherData> {
+  let displayName = "Current Location";
+  let countryCode = "";
+  let timezoneIdentifier = "auto"; // Default to auto for weather API if geocoding fails
+  let utcOffsetSeconds = 0; // Will be updated from weather API if geocoding fails
 
-  let iconKey = mapConditionToIconKey(weatherConditionMain);
-  // If wind speed is high, consider it "Windy" regardless of primary condition, unless it's a storm
+  try {
+    const geoData = await getGeocodingDataByCoords(lat, lon);
+    if (geoData) {
+      displayName = (geoData.admin1 && geoData.admin1 !== geoData.name) ? `${geoData.name}, ${geoData.admin1}` : geoData.name;
+      countryCode = geoData.country_code;
+      timezoneIdentifier = geoData.timezone; // Use specific timezone from geocoding
+      utcOffsetSeconds = geoData.utc_offset_seconds;
+    }
+  } catch (e) {
+    console.warn("Failed to get location name from coordinates, using default.", e);
+  }
+
+  const weatherApiUrl = `${FORECAST_API_BASE_URL}?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,surface_pressure,visibility&daily=sunrise,sunset&wind_speed_unit=kmh&timezone=${timezoneIdentifier}`;
+  const weatherResponse = await fetch(weatherApiUrl);
+  if (!weatherResponse.ok) {
+    throw new Error(`Failed to fetch weather data for coordinates ${lat}, ${lon}`);
+  }
+  const weatherApiData = await weatherResponse.json();
+  
+  // If geocoding failed earlier, use UTC offset from weather API
+  const finalUtcOffsetSeconds = utcOffsetSeconds || weatherApiData.utc_offset_seconds;
+
+  return transformApiDataToWeatherData(weatherApiData, displayName, countryCode, finalUtcOffsetSeconds);
+}
+
+function transformApiDataToWeatherData(
+  apiData: any, 
+  locationDisplayName: string, 
+  countryCode: string | undefined,
+  utcOffsetSeconds: number
+): WeatherData {
+  const { current, daily } = apiData;
+  const { main: conditionMain, description: conditionDescription } = wmoCodeToDescription(current.weather_code);
+  
+  const windSpeedKmh = parseFloat(current.wind_speed_10m.toFixed(1));
+  let iconKey = mapWmoCodeToIconKey(current.weather_code);
+
   if (windSpeedKmh > 30 && iconKey !== "Thunderstorm" && iconKey !== "Snowy" && iconKey !== "Rainy") {
     iconKey = "Windy";
   }
+  
+  const sunriseTimestamp = daily.sunrise && daily.sunrise[0] ? Math.floor(new Date(daily.sunrise[0]).getTime() / 1000) : undefined;
+  const sunsetTimestamp = daily.sunset && daily.sunset[0] ? Math.floor(new Date(daily.sunset[0]).getTime() / 1000) : undefined;
 
   return {
-    temperature: Math.round(apiData.main.temp),
-    humidity: apiData.main.humidity,
+    temperature: Math.round(current.temperature_2m),
+    humidity: Math.round(current.relative_humidity_2m),
     windSpeed: windSpeedKmh,
-    condition: weatherConditionMain,
-    description: weatherDescription.charAt(0).toUpperCase() + weatherDescription.slice(1),
-    location: `${apiData.name}${apiData.sys?.country ? ', ' + apiData.sys.country : ''}`,
+    condition: conditionMain,
+    description: conditionDescription,
+    location: `${locationDisplayName}${countryCode ? ', ' + countryCode.toUpperCase() : ''}`,
     icon: iconKey,
-    feelsLike: apiData.main.feels_like ? Math.round(apiData.main.feels_like) : undefined,
-    pressure: apiData.main.pressure,
-    visibility: apiData.visibility,
-    sunrise: apiData.sys?.sunrise,
-    sunset: apiData.sys?.sunset,
-    timezone: apiData.timezone,
-    country: apiData.sys?.country,
+    feelsLike: current.apparent_temperature ? Math.round(current.apparent_temperature) : undefined,
+    pressure: current.surface_pressure ? Math.round(current.surface_pressure) : undefined,
+    visibility: current.visibility, // Assuming this is in meters as per Open-Meteo docs
+    sunrise: sunriseTimestamp,
+    sunset: sunsetTimestamp,
+    timezone: utcOffsetSeconds, // utc_offset_seconds from Open-Meteo
+    country: countryCode ? countryCode.toUpperCase() : undefined,
   };
 }
-
-// Placeholder for actual API key, not used in mock
-const API_KEY = process.env.NEXT_PUBLIC_OPENWEATHERMAP_API_KEY || "YOUR_API_KEY";
-const BASE_URL = "https://api.openweathermap.org/data/2.5/weather";
-
-// Example of how real fetch functions would look (NOT USED BY THE MOCK)
-/*
-export async function fetchRealWeatherByCoords(lat: number, lon: number): Promise<WeatherData> {
-  const response = await fetch(`${BASE_URL}?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric`);
-  if (!response.ok) {
-    throw new Error('Failed to fetch weather data');
-  }
-  const data = await response.json();
-  return transformApiDataToWeatherData(data, data.name);
-}
-
-export async function fetchRealWeatherByLocationName(locationName: string): Promise<WeatherData> {
-  const response = await fetch(`${BASE_URL}?q=${locationName}&appid=${API_KEY}&units=metric`);
-  if (!response.ok) {
-     if (response.status === 404) {
-        throw new Error(`City not found: ${locationName}`);
-     }
-    throw new Error('Failed to fetch weather data');
-  }
-  const data = await response.json();
-  return transformApiDataToWeatherData(data, locationName);
-}
-*/
