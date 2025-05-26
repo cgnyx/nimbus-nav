@@ -30,29 +30,32 @@ export default function HomePage() {
       toast({
         title: "Activity Suggestion Error",
         description: "Could not fetch activity suggestions at this time.",
-        variant: "default",
+        variant: "default", // Changed from destructive as it's a secondary feature
       });
-      setActivitySuggestions([]);
+      setActivitySuggestions([]); // Clear previous suggestions on error
     } finally {
       setIsLoadingActivities(false);
     }
   }, [toast]);
 
   const performWeatherFetch = useCallback(async (query: string, isGeoCall: boolean): Promise<WeatherData | null> => {
-    if (!query && !isGeoCall) {
-      setIsLoadingWeather(false);
+    if (!query && !isGeoCall) { // If query is empty and it's not a geo call, do nothing.
+      setIsLoadingWeather(false); // Ensure loading is false if we bail early.
       return null;
     }
 
     setIsLoadingWeather(true);
     setError(null);
-    setWeatherData(null);
-    setActivitySuggestions([]);
+    setWeatherData(null); // Clear previous weather data before new fetch
+    setActivitySuggestions([]); // Clear activity suggestions too
 
     try {
       let data;
       if (isGeoCall && query.includes(',')) {
-        const [lat, lon] = query.split(',').map(Number);
+        const [latStr, lonStr] = query.split(',');
+        const lat = parseFloat(latStr);
+        const lon = parseFloat(lonStr);
+        // fetchWeatherByCoords will throw if lat/lon are NaN or invalid
         data = await fetchWeatherByCoords(lat, lon);
       } else {
         data = await fetchWeatherByLocationName(query);
@@ -68,7 +71,7 @@ export default function HomePage() {
           variant: "default",
         });
       }
-      return data;
+      return data; // Return data for the caller to inspect (e.g., handleGeoLocationSearch)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch weather data.';
       setError(errorMessage);
@@ -77,79 +80,90 @@ export default function HomePage() {
         description: errorMessage,
         variant: "destructive",
       });
-      setWeatherData(null);
-      return null;
+      setWeatherData(null); // Ensure weather data is null on error
+      return null; // Return null on error
     } finally {
       setIsLoadingWeather(false);
     }
   }, [toast, fetchActivitySuggestions]);
 
+
   const handleDebouncedSearch = useCallback(async (query: string) => {
+    // For debounced search, the searchQuery is already set by user input.
+    // We just need to fetch.
     await performWeatherFetch(query, false);
   }, [performWeatherFetch]);
 
+
   const handleGeoLocationSearch = useCallback(async () => {
-    if (navigator.geolocation) {
-      setSearchQuery('Locating...');
-      setIsLoadingWeather(true); 
-      setError(null);
-      setWeatherData(null);
-      setActivitySuggestions([]);
+    setSearchQuery('Locating...'); // Visual feedback
+    setIsLoadingWeather(true);
+    setError(null);
+    setWeatherData(null);
+    setActivitySuggestions([]);
 
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude } = position.coords;
-          const coordQuery = `${latitude},${longitude}`;
-          const weatherResult = await performWeatherFetch(coordQuery, true); 
-
-          if (weatherResult && weatherResult.location) {
-            const newLocationName = weatherResult.location.split(',')[0];
-            setSearchQuery(newLocationName);
-          } else {
-            toast({
-              title: "Location Information",
-              description: "Could not determine your specific location. Defaulting to Bangalore.",
-              variant: "default",
-            });
-            setSearchQuery('Bangalore');
-            await performWeatherFetch('Bangalore', false);
-          }
-        },
-        async (geoError: GeolocationPositionError) => {
-          setIsLoadingWeather(false);
-          const errorMessage = `Geolocation failed: ${geoError.message}. Defaulting to Bangalore.`;
-          // setError will be set by performWeatherFetch if Bangalore fails, or cleared if it succeeds.
-          toast({
-            title: "Location Error",
-            description: errorMessage,
-            variant: "default", // Not destructive as we are falling back
-          });
-          setSearchQuery('Bangalore');
-          await performWeatherFetch('Bangalore', false);
-        }
-      );
-    } else {
-      setIsLoadingWeather(false); 
-      const description = "Geolocation is not supported by your browser. Defaulting to Bangalore.";
-      // setError will be set by performWeatherFetch
+    const defaultToBangalore = async (reason: string) => {
       toast({
         title: "Location Error",
-        description: description,
+        description: `${reason}. Defaulting to Bangalore.`,
         variant: "default",
       });
       setSearchQuery('Bangalore');
       await performWeatherFetch('Bangalore', false);
+      // setIsLoadingWeather(false); // performWeatherFetch handles this
+    };
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+
+          if (typeof latitude !== 'number' || isNaN(latitude) || typeof longitude !== 'number' || isNaN(longitude)) {
+            await defaultToBangalore("Failed to get valid coordinates");
+            return;
+          }
+
+          const coordQuery = `${latitude},${longitude}`;
+          const weatherResult = await performWeatherFetch(coordQuery, true);
+
+          if (weatherResult && weatherResult.location) {
+            const newLocationName = weatherResult.location.split(',')[0].trim();
+            const isCoordBasedName = newLocationName.startsWith("Coords:") || newLocationName === "Unknown Coordinates";
+
+            if (!isCoordBasedName) {
+              setSearchQuery(newLocationName); // Update search bar to the resolved city name
+            } else {
+              // Weather for coords is shown, but search bar/query defaults to Bangalore
+              toast({
+                title: "Location Information",
+                description: "Showing weather for your coordinates. City name not found, search defaults to Bangalore.",
+                variant: "default",
+              });
+              setSearchQuery('Bangalore'); 
+              // Do not re-fetch here if weatherResult for coords was successful,
+              // as performWeatherFetch already displayed it.
+              // If we wanted to *replace* coords weather with Bangalore weather, we'd fetch here.
+            }
+          } else {
+            // performWeatherFetch failed for coordinates or returned no location
+            await defaultToBangalore("Could not fetch weather for your location");
+          }
+        },
+        async (geoError: GeolocationPositionError) => {
+          await defaultToBangalore(`Geolocation failed: ${geoError.message}`);
+        }
+      );
+    } else {
+      await defaultToBangalore("Geolocation is not supported by your browser");
     }
-  }, [performWeatherFetch, toast]); 
+  }, [performWeatherFetch, toast]); // searchQuery removed as it's managed internally now
 
   useEffect(() => {
-    // Only call handleGeoLocationSearch if searchQuery is not already set (e.g. by user interaction before mount effect)
-    // and weatherData is not already loaded. This prevents re-fetching on hot reloads if data exists.
-    if (!searchQuery && !weatherData) {
+    if (!searchQuery && !weatherData) { // Only on initial load if no query/data
         handleGeoLocationSearch();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handleGeoLocationSearch]); // handleGeoLocationSearch is stable. Add other missing dependencies if ESLint suggests and they are truly needed.
+  }, [handleGeoLocationSearch]); // handleGeoLocationSearch is stable
 
 
   return (
@@ -157,13 +171,13 @@ export default function HomePage() {
       <Header />
       <LocationSearchBar
         value={searchQuery}
-        onChange={setSearchQuery}
-        onSearch={handleDebouncedSearch}
+        onChange={setSearchQuery} // Allow LocationSearchBar to update searchQuery
+        onSearch={handleDebouncedSearch} // Pass the debounced search handler
         onLocateMe={handleGeoLocationSearch}
         isLoading={isLoadingWeather}
       />
 
-      {error && !isLoadingWeather && !weatherData && (
+      {error && !isLoadingWeather && !weatherData && ( // Only show general error if no data and not loading
         <div className="text-destructive text-center my-4 p-4 bg-destructive/10 rounded-md">{error}</div>
       )}
 

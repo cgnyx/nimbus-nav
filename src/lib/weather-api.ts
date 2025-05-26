@@ -65,12 +65,12 @@ async function getGeocodingDataByCoords(lat: number, lon: number): Promise<any> 
   const response = await fetch(`${GEOCODING_API_BASE_URL}?latitude=${lat}&longitude=${lon}&count=1&language=en&format=json`);
    if (!response.ok) {
     console.warn(`Failed to fetch geocoding data for coords ${lat},${lon}. Status: ${response.status}`);
-    return null;
+    return null; // Return null instead of throwing, to allow fallback display name
   }
   const data = await response.json();
   if (!data.results || data.results.length === 0) {
      console.warn(`No geocoding results for coords ${lat},${lon}`);
-    return null;
+    return null; // Return null for the same reason
   }
   return data.results[0];
 }
@@ -92,6 +92,11 @@ export async function fetchWeatherByLocationName(locationName: string): Promise<
 }
 
 export async function fetchWeatherByCoords(lat: number, lon: number): Promise<WeatherData> {
+  if (typeof lat !== 'number' || isNaN(lat) || typeof lon !== 'number' || isNaN(lon)) {
+    console.error('Invalid coordinates provided to fetchWeatherByCoords:', lat, lon);
+    throw new Error(`Invalid coordinates: Latitude and Longitude must be valid numbers.`);
+  }
+
   let displayName: string;
   let countryCode = "";
   let timezoneIdentifier = "auto"; 
@@ -111,6 +116,7 @@ export async function fetchWeatherByCoords(lat: number, lon: number): Promise<We
       console.warn(`Using coordinates as display name because geocoding for ${lat},${lon} failed or returned no name.`);
     }
   } catch (e) {
+    // This catch is for errors during getGeocodingDataByCoords itself or processing its result
     console.warn("Error during geocoding by coords, using coordinates as display name.", e);
     displayName = `Coords: ${lat.toFixed(2)}, ${lon.toFixed(2)}`;
   }
@@ -118,12 +124,10 @@ export async function fetchWeatherByCoords(lat: number, lon: number): Promise<We
   const weatherApiUrl = `${FORECAST_API_BASE_URL}?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,surface_pressure,visibility&daily=sunrise,sunset&wind_speed_unit=kmh&timezone=${timezoneIdentifier}`;
   const weatherResponse = await fetch(weatherApiUrl);
   if (!weatherResponse.ok) {
-    // Use the determined displayName in the error message for consistency
     throw new Error(`Failed to fetch weather data for ${displayName}`);
   }
   const weatherApiData = await weatherResponse.json();
   
-  // Ensure utcOffsetSeconds is a number, prefer value from geocoding if specific, else from weather API, else 0.
   const finalUtcOffsetSeconds = utcOffsetSeconds || weatherApiData.utc_offset_seconds || 0;
 
   return transformApiDataToWeatherData(weatherApiData, displayName, countryCode, finalUtcOffsetSeconds);
@@ -165,4 +169,3 @@ function transformApiDataToWeatherData(
     country: countryCode ? countryCode.toUpperCase() : undefined,
   };
 }
-
